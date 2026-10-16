@@ -26,8 +26,11 @@ The wake target can be given as:
 | Kind     | Examples                                    | Meaning                                  |
 |----------|---------------------------------------------|------------------------------------------|
 | Duration | `60`, `90s`, `15m`, `2h`, `1h30m`, `1d12h`  | from now; a bare number means seconds    |
-| Time     | `07:00`, `7:30:15`                          | next occurrence, today or tomorrow       |
+| Time     | `07:00`, `7:30:15`, `7am`, `6:30pm`         | next occurrence, today or tomorrow       |
 | Date     | `"2026-10-14 07:00"`, `"tomorrow 6:30"`     | anything `date -d` accepts               |
+
+Duration units must come in `d`, `h`, `m`, `s` order, each at most once, and a
+bare number is only accepted on its own: `1h30` is an error, not 1h 0m 30s.
 
 Options:
 

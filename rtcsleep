@@ -3,8 +3,9 @@
 #
 # Usage: rtcsleep [-m mem|hibernate|off] [-n] <duration|time|date>
 #
-#   Duration:  60, 90s, 15m, 2h, 1h30m, 1d12h   (bare number = seconds)
-#   Time:      07:00, 7:30:15                   (next occurrence, today or tomorrow)
+#   Duration:  60, 90s, 15m, 2h, 1h30m, 1d12h   (bare number = seconds; units
+#                                               d h m s in order, each once)
+#   Time:      07:00, 7:30:15, 7am, 6:30pm      (next occurrence, today or tomorrow)
 #   Date:      "2026-10-14 07:00", "tomorrow 6:30", anything `date -d` accepts
 #
 #   -m MODE    mem (suspend-to-RAM, default), hibernate, off (power off)
@@ -20,7 +21,7 @@ RTCWAKE=/usr/sbin/rtcwake
 MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
 RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,/^$/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "rtcsleep: $*" >&2; exit 1; }
 
 mode=mem dryrun=0
@@ -45,31 +46,32 @@ case $mode in
 esac
 
 # Parse a duration like 90, 90s, 15m, 1h30m, 1d12h into seconds; fail otherwise.
+# A bare number is only allowed on its own ("1h30" is rejected, not 1h 0m 30s),
+# and units must come in d, h, m, s order, each at most once.
 parse_duration() {
-    local s=$1 total=0 n u
-    [[ $s =~ ^([0-9]+[dhms]?)+$ ]] || return 1
-    [[ $s =~ [0-9]$ ]] && s+=s
-    while [[ $s =~ ^([0-9]+)([dhms])(.*)$ ]]; do
-        n=$((10#${BASH_REMATCH[1]})) u=${BASH_REMATCH[2]} s=${BASH_REMATCH[3]}
-        case $u in
-            d) total=$((total + n * 86400)) ;;
-            h) total=$((total + n * 3600)) ;;
-            m) total=$((total + n * 60)) ;;
-            s) total=$((total + n)) ;;
-        esac
+    local s=$1 total=0 i part
+    local -a mult=(86400 3600 60 1)
+    if [[ $s =~ ^[0-9]+$ ]]; then echo $((10#$s)); return; fi
+    [[ -n $s && $s =~ ^([0-9]+d)?([0-9]+h)?([0-9]+m)?([0-9]+s)?$ ]] || return 1
+    for i in 1 2 3 4; do
+        part=${BASH_REMATCH[i]}
+        [[ -n $part ]] && total=$((total + 10#${part%?} * mult[i - 1]))
     done
-    [[ -z $s ]] && echo "$total"
+    echo "$total"
 }
+
+# Time of day: 7:30, 07:30:15, or 12-hour 7am, 6:30pm, "7 PM".
+time_re='^[0-9]{1,2}(:[0-9]{2}){1,2}$|^[0-9]{1,2}(:[0-9]{2}){0,2} ?[AaPp][Mm]$'
 
 now=$(date +%s)
 if secs=$(parse_duration "$target"); then
     wake=$((now + secs))
-elif [[ $target =~ ^[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?$ ]]; then
-    wake=$(date -d "today $target" +%s) || die "invalid time '$target'"
+elif [[ $target =~ $time_re ]]; then
+    wake=$(date -d "today $target" +%s 2>/dev/null) || die "invalid time '$target'"
     (( wake > now + MIN_LEAD )) || wake=$(date -d "tomorrow $target" +%s)
 elif [[ $target =~ ^[0-9]+[[:alnum:]]*$ ]]; then
-    # e.g. "1x": not a valid duration, but `date -d` would accept it
-    die "invalid duration '$target' (use s, m, h, d)"
+    # e.g. "1x", "1h30": not valid durations, but `date -d` would accept them
+    die "invalid duration '$target' (e.g. 90, 15m, 1h30m, 1d12h)"
 else
     wake=$(date -d "$target" +%s 2>/dev/null) || die "cannot parse '$target'"
 fi

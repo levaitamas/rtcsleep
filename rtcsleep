@@ -154,6 +154,15 @@ fi
 
 systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm cleared"
 
+# systemd has accepted the request and the suspend can no longer be cancelled,
+# so a signal from here on must not clear the alarm: the machine would sleep
+# with no wake-up. Only the timeout below (the suspend evidently did not
+# happen) and the normal exit after the resume clear it.
+keep_alarm() { trap - EXIT; echo "rtcsleep: $1; RTC alarm left set" >&2; exit "$2"; }
+trap 'keep_alarm "hangup" 129' HUP
+trap 'keep_alarm "interrupted" 130' INT
+trap 'keep_alarm "terminated" 143' TERM
+
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.
 # A failed read counts as "not resumed yet"; mistaking it for a resume would

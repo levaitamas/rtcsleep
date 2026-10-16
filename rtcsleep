@@ -74,8 +74,17 @@ now=$(date +%s)
 if secs=$(parse_duration "$target"); then
     wake=$((now + secs))
 elif [[ $target =~ $time_re ]]; then
-    wake=$(date -d "today $target" +%s 2>/dev/null) || die "invalid time '$target'"
-    (( wake > now + MIN_LEAD )) || wake=$(date -d "tomorrow $target" +%s)
+    TZ=UTC0 date -d "2000-01-01 $target" >/dev/null 2>&1 || die "invalid time '$target'"
+    # Use explicit dates: `date -d "tomorrow 02:30"` resolves 02:30 against
+    # today, so it fails if today's 02:30 falls into a DST gap. A time that does
+    # not exist today (DST gap) moves on to tomorrow.
+    today=$(date -d "@$now" +%F)
+    wake=$(date -d "$today $target" +%s 2>/dev/null) || wake=0
+    if (( wake <= now + MIN_LEAD )); then
+        tomorrow=$(date -d "$today 12:00 +1 day" +%F)
+        wake=$(date -d "$tomorrow $target" +%s 2>/dev/null) ||
+            die "time '$target' does not exist tomorrow (DST change)"
+    fi
 elif [[ $target =~ ^[0-9]+[[:alnum:]]*$ ]]; then
     # e.g. "1x", "1h30": not valid durations, but `date -d` would accept them
     die "invalid duration '$target' (e.g. 90, 15m, 1h30m, 1d12h)"

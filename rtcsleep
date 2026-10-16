@@ -55,7 +55,8 @@ esac
 # Parse a duration like 90, 90s, 15m, 1h30m, 1d12h into seconds; fail otherwise.
 # A bare number is only allowed on its own ("1h30" is rejected, not 1h 0m 30s),
 # and units must come in d, h, m, s order, each at most once. Returns 2 for
-# numbers over 9 digits, which could overflow the arithmetic.
+# numbers over 9 digits (leading zeros aside), which could overflow the
+# arithmetic.
 parse_duration() {
     local s=$1 total=0 i n
     local -a mult=(86400 3600 60 1) parts
@@ -65,6 +66,7 @@ parse_duration() {
     for i in 0 1 2 3; do
         n=${parts[i]%?}
         [[ -n $n ]] || continue
+        [[ $n =~ ^0*([0-9]+)$ ]] && n=${BASH_REMATCH[1]}
         (( ${#n} <= 9 )) || return 2
         total=$((total + 10#$n * mult[i]))
     done

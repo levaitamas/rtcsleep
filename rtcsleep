@@ -156,8 +156,12 @@ systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm 
 
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.
+# A failed read counts as "not resumed yet"; mistaking it for a resume would
+# clear the alarm while the machine may still be about to suspend.
 waited=0
-while [[ $(cat "$SUSPEND_STATS") == "$before" ]]; do
+while :; do
+    count=$(cat "$SUSPEND_STATS" 2>/dev/null) || count=$before
+    [[ $count == "$before" ]] || break
     sleep 1
     if (( ++waited >= RESUME_TIMEOUT )); then
         die "system did not go to sleep within ${RESUME_TIMEOUT}s; RTC alarm cleared"

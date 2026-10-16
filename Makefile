@@ -37,6 +37,8 @@ test:
 	! ./rtcsleep -n 1h2h 2>/dev/null
 	! ./rtcsleep -n 30m1h 2>/dev/null
 	! ./rtcsleep -n 13pm 2>/dev/null
+	! ./rtcsleep -n 1000000000 2>/dev/null
+	! ./rtcsleep -n 99999999999999999999d 2>/dev/null
 	! ./rtcsleep -n -m bogus 1h 2>/dev/null
 	! ./rtcsleep -n "yesterday" 2>/dev/null
 	! ./rtcsleep >/dev/null 2>&1

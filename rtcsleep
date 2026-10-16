@@ -54,15 +54,19 @@ esac
 
 # Parse a duration like 90, 90s, 15m, 1h30m, 1d12h into seconds; fail otherwise.
 # A bare number is only allowed on its own ("1h30" is rejected, not 1h 0m 30s),
-# and units must come in d, h, m, s order, each at most once.
+# and units must come in d, h, m, s order, each at most once. Returns 2 for
+# numbers over 9 digits, which could overflow the arithmetic.
 parse_duration() {
-    local s=$1 total=0 i part
-    local -a mult=(86400 3600 60 1)
-    if [[ $s =~ ^[0-9]+$ ]]; then echo $((10#$s)); return; fi
+    local s=$1 total=0 i n
+    local -a mult=(86400 3600 60 1) parts
+    [[ $s =~ ^[0-9]+$ ]] && s+=s
     [[ -n $s && $s =~ ^([0-9]+d)?([0-9]+h)?([0-9]+m)?([0-9]+s)?$ ]] || return 1
-    for i in 1 2 3 4; do
-        part=${BASH_REMATCH[i]}
-        [[ -n $part ]] && total=$((total + 10#${part%?} * mult[i - 1]))
+    parts=("${BASH_REMATCH[@]:1}")
+    for i in 0 1 2 3; do
+        n=${parts[i]%?}
+        [[ -n $n ]] || continue
+        (( ${#n} <= 9 )) || return 2
+        total=$((total + 10#$n * mult[i]))
     done
     echo "$total"
 }
@@ -73,6 +77,8 @@ time_re='^[0-9]{1,2}(:[0-9]{2}){1,2}$|^[0-9]{1,2}(:[0-9]{2}){0,2} ?[AaPp][Mm]$'
 now=$(date +%s)
 if secs=$(parse_duration "$target"); then
     wake=$((now + secs))
+elif (( $? == 2 )); then
+    die "duration '$target' is too long"
 elif [[ $target =~ $time_re ]]; then
     TZ=UTC0 date -d "2000-01-01 $target" >/dev/null 2>&1 || die "invalid time '$target'"
     # Use explicit dates: `date -d "tomorrow 02:30"` resolves 02:30 against

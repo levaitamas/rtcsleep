@@ -121,4 +121,8 @@ while [[ $(cat "$SUSPEND_STATS") == "$before" ]]; do
         die "system did not go to sleep within ${RESUME_TIMEOUT}s; RTC alarm cleared"
     fi
 done
+
+# Something else (keyboard, lid, network) may have woken the machine before the
+# alarm fired; clear it so it cannot wake up a later, unrelated suspend.
+"$RTCWAKE" -m disable >/dev/null 2>&1 || true
 echo "Woke:   $(date '+%a %F %T %Z') (slept ~$(( $(date +%s) - now ))s incl. suspend/resume)"

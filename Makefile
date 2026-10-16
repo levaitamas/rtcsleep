@@ -31,16 +31,23 @@ test:
 	./rtcsleep -n "5pm tomorrow"
 	./rtcsleep -n -m hibernate "tomorrow 6:30"
 	./rtcsleep -n -m off 2h
-	! ./rtcsleep -n 10s 2>/dev/null
-	! ./rtcsleep -n 1x 2>/dev/null
-	! ./rtcsleep -n 1h30 2>/dev/null
-	! ./rtcsleep -n 1h2h 2>/dev/null
-	! ./rtcsleep -n 30m1h 2>/dev/null
-	! ./rtcsleep -n 13pm 2>/dev/null
-	! ./rtcsleep -n 1000000000 2>/dev/null
-	! ./rtcsleep -n 99999999999999999999d 2>/dev/null
+	./rtcsleep -n " 08:00 "
 	./rtcsleep -n 0000000090
-	! ./rtcsleep -n -m bogus 1h 2>/dev/null
-	! ./rtcsleep -n "yesterday" 2>/dev/null
-	! ./rtcsleep >/dev/null 2>&1
+	$(call rejects,10s,less than 30s)
+	$(call rejects,1x,invalid duration)
+	$(call rejects,1h30,invalid duration)
+	$(call rejects,1h2h,invalid duration)
+	$(call rejects,30m1h,invalid duration)
+	$(call rejects,13pm,invalid time)
+	$(call rejects,1000000000,too long)
+	$(call rejects,99999999999999999999d,too long)
+	$(call rejects,-m bogus 1h,invalid mode)
+	$(call rejects,yesterday,in the past)
+	$(call rejects,-m,needs an argument)
+	$(call rejects,-x 1h,unknown option)
+	./rtcsleep 2>&1 >/dev/null | grep -q '^Usage:'; ! ./rtcsleep >/dev/null 2>&1
 	@echo "All tests passed."
+
+# rejects(args, message): the dry run must fail and say why. Checking the
+# message makes sure it failed for the expected reason, not from a crash.
+rejects = ./rtcsleep -n $(1) 2>&1 | grep -q '^rtcsleep: .*$(2)' && ! ./rtcsleep -n $(1) >/dev/null 2>&1

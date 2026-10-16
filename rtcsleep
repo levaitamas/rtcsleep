@@ -44,6 +44,10 @@ done
 shift $((OPTIND - 1))
 [[ $# -ge 1 ]] || usage 1
 target="$*"
+# Trim surrounding whitespace; "08:00 " would otherwise miss the time-of-day
+# match below and fall through to `date -d`, which does not roll over to tomorrow.
+target=${target#"${target%%[![:space:]]*}"}
+target=${target%"${target##*[![:space:]]}"}
 
 case $mode in
     mem)       systemctl_verb=suspend ;;

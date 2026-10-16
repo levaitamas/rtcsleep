@@ -131,8 +131,7 @@ fi
 
 # From here on, any exit clears the alarm: errors, Ctrl-C, kill, and also the
 # normal exit after resuming from suspend, since something else (keyboard, lid,
-# network) may have woken the machine before the alarm fired. Only hibernate
-# and poweroff exit with the alarm left set, as they need it to wake up.
+# network) may have woken the machine before the alarm fired.
 trap clear_alarm EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
@@ -140,12 +139,20 @@ trap 'exit 143' TERM
 
 "$RTCWAKE" -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
 
-systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm cleared"
-
+# Hibernate and poweroff need the alarm to wake up again. Stop clearing it on
+# exit before calling systemctl: the shutdown may signal or kill this script
+# (or systemctl) at any point from here on.
 if [[ $mode != mem ]]; then
     trap - EXIT
-    exit 0
+    systemctl "$systemctl_verb" && exit 0
+    rc=$?
+    # Killed by a signal: most likely by the shutdown itself, which needs the alarm.
+    (( rc > 128 )) && die "systemctl $systemctl_verb was killed; RTC alarm left set"
+    clear_alarm
+    die "systemctl $systemctl_verb failed; RTC alarm cleared"
 fi
+
+systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm cleared"
 
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.

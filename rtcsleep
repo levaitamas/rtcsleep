@@ -18,6 +18,7 @@
 set -euo pipefail
 
 RTCWAKE=/usr/sbin/rtcwake
+SUSPEND_STATS=/sys/power/suspend_stats/success
 MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
 RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
 
@@ -95,9 +96,14 @@ if (( dryrun )); then
     exit 0
 fi
 
+# Read the suspend counter before arming the alarm, so a failure here cannot
+# leave an alarm set behind. Only suspend-to-RAM waits for the resume.
+if [[ $mode == mem ]]; then
+    before=$(cat "$SUSPEND_STATS" 2>/dev/null) || die "cannot read $SUSPEND_STATS"
+fi
+
 "$RTCWAKE" -u -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
 
-before=$(cat /sys/power/suspend_stats/success)
 if ! systemctl "$systemctl_verb"; then
     "$RTCWAKE" -m disable >/dev/null 2>&1 || true
     die "systemctl $systemctl_verb failed; RTC alarm cleared"
@@ -108,7 +114,7 @@ fi
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.
 waited=0
-while [[ $(cat /sys/power/suspend_stats/success) == "$before" ]]; do
+while [[ $(cat "$SUSPEND_STATS") == "$before" ]]; do
     sleep 1
     if (( ++waited >= RESUME_TIMEOUT )); then
         "$RTCWAKE" -m disable >/dev/null 2>&1 || true

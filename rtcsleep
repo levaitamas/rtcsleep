@@ -2,6 +2,7 @@
 # rtcsleep - put the machine to sleep and wake it up via the RTC alarm.
 #
 # Usage: rtcsleep [-m mem|hibernate|off] [-n] <duration|time|date>
+#        rtcsleep -h
 #
 #   Duration:  60, 90s, 15m, 2h, 1h30m, 1d12h   (bare number = seconds; units
 #                                               d h m s in order, each once)
@@ -27,7 +28,12 @@ SUSPEND_STATS=/sys/power/suspend_stats   # success and fail counters
 MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
 RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
 
-usage() { sed -n '2,/^$/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+# Help goes to stdout for -h and to stderr when it is shown because of an error.
+usage() {
+    if (( ${1:-0} == 0 )); then print_help; else print_help >&2; fi
+    exit "${1:-0}"
+}
+print_help() { sed -n '2,/^$/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "rtcsleep: $*" >&2; exit 1; }
 clear_alarm() { "$RTCWAKE" -m disable >/dev/null 2>&1 || true; }
 

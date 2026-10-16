@@ -24,6 +24,7 @@ RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
 
 usage() { sed -n '2,/^$/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "rtcsleep: $*" >&2; exit 1; }
+clear_alarm() { "$RTCWAKE" -m disable >/dev/null 2>&1 || true; }
 
 mode=mem dryrun=0
 while getopts ":m:nh" opt; do
@@ -102,14 +103,23 @@ if [[ $mode == mem ]]; then
     before=$(cat "$SUSPEND_STATS" 2>/dev/null) || die "cannot read $SUSPEND_STATS"
 fi
 
+# From here on, any exit clears the alarm: errors, Ctrl-C, kill, and also the
+# normal exit after resuming from suspend, since something else (keyboard, lid,
+# network) may have woken the machine before the alarm fired. Only hibernate
+# and poweroff exit with the alarm left set, as they need it to wake up.
+trap clear_alarm EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 "$RTCWAKE" -u -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
 
-if ! systemctl "$systemctl_verb"; then
-    "$RTCWAKE" -m disable >/dev/null 2>&1 || true
-    die "systemctl $systemctl_verb failed; RTC alarm cleared"
-fi
+systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm cleared"
 
-[[ $mode == mem ]] || exit 0
+if [[ $mode != mem ]]; then
+    trap - EXIT
+    exit 0
+fi
 
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.
@@ -117,12 +127,7 @@ waited=0
 while [[ $(cat "$SUSPEND_STATS") == "$before" ]]; do
     sleep 1
     if (( ++waited >= RESUME_TIMEOUT )); then
-        "$RTCWAKE" -m disable >/dev/null 2>&1 || true
         die "system did not go to sleep within ${RESUME_TIMEOUT}s; RTC alarm cleared"
     fi
 done
-
-# Something else (keyboard, lid, network) may have woken the machine before the
-# alarm fired; clear it so it cannot wake up a later, unrelated suspend.
-"$RTCWAKE" -m disable >/dev/null 2>&1 || true
 echo "Woke:   $(date '+%a %F %T %Z') (slept ~$(( $(date +%s) - now ))s incl. suspend/resume)"

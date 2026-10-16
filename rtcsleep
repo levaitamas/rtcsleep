@@ -99,9 +99,9 @@ else
 fi
 
 lead=$((wake - now))
-(( lead > 0 )) || die "wake time $(date -d "@$wake" '+%F %T %Z') is in the past"
-(( lead >= MIN_LEAD )) ||
-    die "wake time $(date -d "@$wake" '+%F %T %Z') is less than ${MIN_LEAD}s from now"
+wake_str=$(date -d "@$wake" '+%a %F %T %Z')
+(( lead > 0 )) || die "wake time $wake_str is in the past"
+(( lead >= MIN_LEAD )) || die "wake time $wake_str is less than ${MIN_LEAD}s from now"
 
 # Fail before asking for a sudo password; a dry run does not need rtcwake.
 (( dryrun )) || [[ -n $RTCWAKE ]] ||
@@ -113,8 +113,8 @@ if (( !dryrun && EUID != 0 )); then
     exec sudo "$0" -m "$mode" "@$wake"
 fi
 
-printf 'Mode:   %s\nWake:   %s (in %dh %02dm %02ds)\n' "$mode" \
-    "$(date -d "@$wake" '+%a %F %T %Z')" $((lead / 3600)) $((lead % 3600 / 60)) $((lead % 60))
+printf 'Mode:   %s\nWake:   %s (in %dh %02dm %02ds)\n' "$mode" "$wake_str" \
+    $((lead / 3600)) $((lead % 3600 / 60)) $((lead % 60))
 
 if (( dryrun )); then
     echo "Dry run: no alarm set, not sleeping."

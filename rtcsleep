@@ -17,7 +17,12 @@
 
 set -euo pipefail
 
-RTCWAKE=/usr/sbin/rtcwake
+# rtcwake lives in /usr/sbin on Debian/Ubuntu and in /usr/bin on Fedora; look
+# for it by path, since /usr/sbin is often not on a normal user's PATH.
+RTCWAKE=
+for p in /usr/sbin/rtcwake /usr/bin/rtcwake; do
+    if [[ -x $p ]]; then RTCWAKE=$p; break; fi
+done
 SUSPEND_STATS=/sys/power/suspend_stats/success
 MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
 RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
@@ -82,6 +87,10 @@ lead=$((wake - now))
 (( lead > 0 )) || die "wake time $(date -d "@$wake" '+%F %T %Z') is in the past"
 (( lead >= MIN_LEAD )) ||
     die "wake time $(date -d "@$wake" '+%F %T %Z') is less than ${MIN_LEAD}s from now"
+
+# Fail before asking for a sudo password; a dry run does not need rtcwake.
+(( dryrun )) || [[ -n $RTCWAKE ]] ||
+    die "rtcwake not found in /usr/sbin or /usr/bin (install util-linux)"
 
 # Everything below needs root; re-exec through sudo with the resolved timestamp
 # so the wake time does not drift while waiting for a password.

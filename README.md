@@ -68,7 +68,8 @@ rtcsleep -m off "tomorrow 8:00"
 
 - Bash 4+
 - GNU coreutils `date` (for parsing date expressions)
-- `rtcwake` from util-linux, at `/usr/sbin/rtcwake`
+- `rtcwake` from util-linux, at `/usr/sbin/rtcwake` (Debian, Ubuntu) or
+  `/usr/bin/rtcwake` (Fedora)
 - systemd
 - `sudo` (or run as root)
 - An RTC that supports wake alarms (check `/sys/class/rtc/rtc0/wakealarm`)

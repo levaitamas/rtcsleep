@@ -121,7 +121,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-"$RTCWAKE" -u -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
+"$RTCWAKE" -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
 
 systemctl "$systemctl_verb" || die "systemctl $systemctl_verb failed; RTC alarm cleared"
 

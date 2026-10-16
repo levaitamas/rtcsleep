@@ -72,8 +72,9 @@ rtcsleep -m off "tomorrow 8:00"
   `/usr/bin/rtcwake` (Fedora)
 - systemd
 - `sudo` (or run as root)
-- An RTC that supports wake alarms (check `/sys/class/rtc/rtc0/wakealarm`)
-  and keeps time in UTC (the script calls `rtcwake -u`)
+- An RTC that supports wake alarms (check `/sys/class/rtc/rtc0/wakealarm`).
+  Whether it keeps UTC or local time is read from `/etc/adjtime`, as set by
+  `hwclock`; without that file, UTC is assumed.
 
 ## Installation
 

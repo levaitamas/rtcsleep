@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# rtcsleep - put the machine to sleep and wake it up via the RTC alarm.
+#
+# Usage: rtcsleep [-m mem|hibernate|off] [-n] <duration|time|date>
+#
+#   Duration:  60, 90s, 15m, 2h, 1h30m, 1d12h   (bare number = seconds)
+#   Time:      07:00, 7:30:15                   (next occurrence, today or tomorrow)
+#   Date:      "2026-10-14 07:00", "tomorrow 6:30", anything `date -d` accepts
+#
+#   -m MODE    mem (suspend-to-RAM, default), hibernate, off (power off)
+#   -n         dry run: show what would happen, set no alarm, do not sleep
+#
+# The RTC alarm is set with `rtcwake -m no`, then the sleep itself goes through
+# systemd (systemctl suspend/hibernate/poweroff) so sleep hooks and inhibitor
+# locks are honored.
+
+set -euo pipefail
+
+RTCWAKE=/usr/sbin/rtcwake
+MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
+RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
+
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+die() { echo "rtcsleep: $*" >&2; exit 1; }
+
+mode=mem dryrun=0
+while getopts ":m:nh" opt; do
+    case $opt in
+        m) mode=$OPTARG ;;
+        n) dryrun=1 ;;
+        h) usage 0 ;;
+        :) die "option -$OPTARG needs an argument" ;;
+        *) die "unknown option -$OPTARG (see -h)" ;;
+    esac
+done
+shift $((OPTIND - 1))
+[[ $# -ge 1 ]] || usage 1
+target="$*"
+
+case $mode in
+    mem)       systemctl_verb=suspend ;;
+    hibernate) systemctl_verb=hibernate ;;
+    off)       systemctl_verb=poweroff ;;
+    *) die "invalid mode '$mode' (mem, hibernate, off)" ;;
+esac
+
+# Parse a duration like 90, 90s, 15m, 1h30m, 1d12h into seconds; fail otherwise.
+parse_duration() {
+    local s=$1 total=0 n u
+    [[ $s =~ ^([0-9]+[dhms]?)+$ ]] || return 1
+    [[ $s =~ [0-9]$ ]] && s+=s
+    while [[ $s =~ ^([0-9]+)([dhms])(.*)$ ]]; do
+        n=$((10#${BASH_REMATCH[1]})) u=${BASH_REMATCH[2]} s=${BASH_REMATCH[3]}
+        case $u in
+            d) total=$((total + n * 86400)) ;;
+            h) total=$((total + n * 3600)) ;;
+            m) total=$((total + n * 60)) ;;
+            s) total=$((total + n)) ;;
+        esac
+    done
+    [[ -z $s ]] && echo "$total"
+}
+
+now=$(date +%s)
+if secs=$(parse_duration "$target"); then
+    wake=$((now + secs))
+elif [[ $target =~ ^[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?$ ]]; then
+    wake=$(date -d "today $target" +%s) || die "invalid time '$target'"
+    (( wake > now + MIN_LEAD )) || wake=$(date -d "tomorrow $target" +%s)
+elif [[ $target =~ ^[0-9]+[[:alnum:]]*$ ]]; then
+    # e.g. "1x": not a valid duration, but `date -d` would accept it
+    die "invalid duration '$target' (use s, m, h, d)"
+else
+    wake=$(date -d "$target" +%s 2>/dev/null) || die "cannot parse '$target'"
+fi
+
+lead=$((wake - now))
+(( lead > 0 )) || die "wake time $(date -d "@$wake" '+%F %T %Z') is in the past"
+(( lead >= MIN_LEAD )) ||
+    die "wake time $(date -d "@$wake" '+%F %T %Z') is less than ${MIN_LEAD}s from now"
+
+# Everything below needs root; re-exec through sudo with the resolved timestamp
+# so the wake time does not drift while waiting for a password.
+if (( !dryrun && EUID != 0 )); then
+    exec sudo "$0" -m "$mode" "@$wake"
+fi
+
+printf 'Mode:   %s\nWake:   %s (in %dh %02dm %02ds)\n' "$mode" \
+    "$(date -d "@$wake" '+%a %F %T %Z')" $((lead / 3600)) $((lead % 3600 / 60)) $((lead % 60))
+
+if (( dryrun )); then
+    echo "Dry run: no alarm set, not sleeping."
+    exit 0
+fi
+
+"$RTCWAKE" -u -m no -t "$wake" >/dev/null || die "failed to set RTC alarm"
+
+before=$(cat /sys/power/suspend_stats/success)
+if ! systemctl "$systemctl_verb"; then
+    "$RTCWAKE" -m disable >/dev/null 2>&1 || true
+    die "systemctl $systemctl_verb failed; RTC alarm cleared"
+fi
+
+[[ $mode == mem ]] || exit 0
+
+# systemctl returns before the machine actually sleeps; wait for the resume.
+# The loop does not run while suspended, so `waited` counts awake time only.
+waited=0
+while [[ $(cat /sys/power/suspend_stats/success) == "$before" ]]; do
+    sleep 1
+    if (( ++waited >= RESUME_TIMEOUT )); then
+        "$RTCWAKE" -m disable >/dev/null 2>&1 || true
+        die "system did not go to sleep within ${RESUME_TIMEOUT}s; RTC alarm cleared"
+    fi
+done
+echo "Woke:   $(date '+%a %F %T %Z') (slept ~$(( $(date +%s) - now ))s incl. suspend/resume)"

@@ -1,0 +1,13 @@
+# Editor and OS cruft
+*~
+*.swp
+*.swo
+.*.sw?
+\#*\#
+.\#*
+.DS_Store
+.idea/
+.vscode/
+
+# Local Claude Code settings
+.claude/settings.local.json

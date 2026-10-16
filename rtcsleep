@@ -23,7 +23,7 @@ RTCWAKE=
 for p in /usr/sbin/rtcwake /usr/bin/rtcwake; do
     if [[ -x $p ]]; then RTCWAKE=$p; break; fi
 done
-SUSPEND_STATS=/sys/power/suspend_stats/success
+SUSPEND_STATS=/sys/power/suspend_stats   # success and fail counters
 MIN_LEAD=30            # seconds; entering suspend takes ~15 s (HDD spin-down)
 RESUME_TIMEOUT=120     # seconds to wait for suspend to start after systemctl
 
@@ -126,7 +126,9 @@ fi
 # Read the suspend counter before arming the alarm, so a failure here cannot
 # leave an alarm set behind. Only suspend-to-RAM waits for the resume.
 if [[ $mode == mem ]]; then
-    before=$(cat "$SUSPEND_STATS" 2>/dev/null) || die "cannot read $SUSPEND_STATS"
+    before=$(cat "$SUSPEND_STATS/success" 2>/dev/null) ||
+        die "cannot read $SUSPEND_STATS/success"
+    failed_before=$(cat "$SUSPEND_STATS/fail" 2>/dev/null) || failed_before=
 fi
 
 # From here on, any exit clears the alarm: errors, Ctrl-C, kill, and also the
@@ -166,11 +168,18 @@ trap 'keep_alarm "terminated" 143' TERM
 # systemctl returns before the machine actually sleeps; wait for the resume.
 # The loop does not run while suspended, so `waited` counts awake time only.
 # A failed read counts as "not resumed yet"; mistaking it for a resume would
-# clear the alarm while the machine may still be about to suspend.
+# clear the alarm while the machine may still be about to suspend. A suspend
+# the kernel rejected (a driver refused to sleep) shows up in the fail counter
+# right away, so there is no need to wait for the timeout then.
 waited=0
 while :; do
-    count=$(cat "$SUSPEND_STATS" 2>/dev/null) || count=$before
+    count=$(cat "$SUSPEND_STATS/success" 2>/dev/null) || count=$before
     [[ $count == "$before" ]] || break
+    if [[ -n $failed_before ]]; then
+        failed=$(cat "$SUSPEND_STATS/fail" 2>/dev/null) || failed=$failed_before
+        [[ $failed == "$failed_before" ]] ||
+            die "suspend failed (see $SUSPEND_STATS/last_failed_dev); RTC alarm cleared"
+    fi
     sleep 1
     if (( ++waited >= RESUME_TIMEOUT )); then
         die "system did not go to sleep within ${RESUME_TIMEOUT}s; RTC alarm cleared"

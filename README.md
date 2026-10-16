@@ -59,10 +59,14 @@ rtcsleep -m off "tomorrow 8:00"
   time is resolved *before* that, so waiting at the password prompt does not
   shift it.
 - In `mem` mode the script waits for the resume and prints when the machine
-  woke up. If the machine has not actually suspended within 120 seconds (for
-  example, because an inhibitor lock blocked it), the RTC alarm is cleared and
-  the script exits with an error.
+  woke up. If the suspend fails, or the machine has not actually suspended
+  within 120 seconds (for example, because an inhibitor lock blocked it), the
+  RTC alarm is cleared and the script exits with an error.
 - If `systemctl` fails, the RTC alarm is cleared again.
+- Once `systemctl` has accepted the request, the sleep can no longer be
+  cancelled, so interrupting the script after that point (Ctrl-C, `kill`, or
+  the shutdown itself in `hibernate` and `off` mode) leaves the RTC alarm set
+  on purpose: a spurious wake-up is better than a machine that never wakes.
 
 ## Requirements
 
